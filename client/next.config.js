@@ -6,7 +6,7 @@ const nextConfig = {
     domains: ['localhost', 'api.topdent.com'],
   },
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://topdent-production.up.railway.app/api',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://fyfikbj-production.up.railway.app/api',
   },
   webpack: (config) => {
     config.experiments = {
