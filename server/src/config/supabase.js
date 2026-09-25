@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import './env.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -9,10 +10,13 @@ if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
   throw new Error('Missing Supabase configuration');
 }
 
+// Explicit transport keeps the API compatible with Railway images that still run Node 20.
+const clientOptions = { realtime: { transport: WebSocket } };
+
 // Client for public operations
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, clientOptions);
 
 // Client for admin operations
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, clientOptions);
 
 export default supabase;
