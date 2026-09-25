@@ -2,6 +2,8 @@ import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { verifyToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
+import { validate } from '../middleware/validate.js';
+import { addCartItemSchema, itemIdParamsSchema, updateCartItemSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
@@ -13,7 +15,7 @@ router.get('/', verifyToken, async (req, res) => {
       .select(`
         *,
         product:products(
-          id, name, code, price, currency, stock_quantity,
+          id, name, code, price, currency, stock_quantity, is_active, is_approved,
           images:product_images(image_url, is_primary)
         )
       `)
@@ -27,21 +29,39 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // Add to cart
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, validate({ body: addCartItemSchema }), async (req, res) => {
   try {
     const { productId, quantity = 1 } = req.body;
 
-    const { data: existing } = await supabase
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id, stock_quantity')
+      .eq('id', productId)
+      .eq('is_active', true)
+      .eq('is_approved', true)
+      .maybeSingle();
+
+    if (productError) throw productError;
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    const { data: existing, error: existingError } = await supabase
       .from('cart_items')
-      .select('id')
+      .select('id, quantity')
       .eq('user_id', req.user.id)
       .eq('product_id', productId)
-      .single();
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    const nextQuantity = (existing?.quantity || 0) + quantity;
+    if (nextQuantity > product.stock_quantity) {
+      return res.status(409).json({ error: 'Requested quantity exceeds available stock' });
+    }
 
     if (existing) {
       const { error } = await supabase
         .from('cart_items')
-        .update({ quantity: existing.quantity + quantity })
+        .update({ quantity: nextQuantity, updated_at: new Date().toISOString() })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -51,8 +71,11 @@ router.post('/', verifyToken, async (req, res) => {
           id: uuidv4(),
           user_id: req.user.id,
           product_id: productId,
-          quantity
+          quantity: nextQuantity
         }]);
+      if (error?.code === '23505') {
+        return res.status(409).json({ error: 'Cart was updated concurrently; please retry' });
+      }
       if (error) throw error;
     }
 
@@ -63,13 +86,33 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // Update cart item
-router.patch('/:itemId', verifyToken, async (req, res) => {
+router.patch(
+  '/:itemId',
+  verifyToken,
+  validate({ params: itemIdParamsSchema, body: updateCartItemSchema }),
+  async (req, res) => {
   try {
     const { quantity } = req.body;
 
+    const { data: item, error: itemError } = await supabase
+      .from('cart_items')
+      .select('id, product:products(stock_quantity, is_active, is_approved)')
+      .eq('id', req.params.itemId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (itemError) throw itemError;
+    if (!item) return res.status(404).json({ error: 'Cart item not found' });
+    if (!item.product?.is_active || !item.product?.is_approved) {
+      return res.status(409).json({ error: 'Product is no longer available' });
+    }
+    if (quantity > item.product.stock_quantity) {
+      return res.status(409).json({ error: 'Requested quantity exceeds available stock' });
+    }
+
     const { error } = await supabase
       .from('cart_items')
-      .update({ quantity })
+      .update({ quantity, updated_at: new Date().toISOString() })
       .eq('id', req.params.itemId)
       .eq('user_id', req.user.id);
 
@@ -78,10 +121,11 @@ router.patch('/:itemId', verifyToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+  }
+);
 
 // Remove from cart
-router.delete('/:itemId', verifyToken, async (req, res) => {
+router.delete('/:itemId', verifyToken, validate({ params: itemIdParamsSchema }), async (req, res) => {
   try {
     const { error } = await supabase
       .from('cart_items')

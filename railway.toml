@@ -4,8 +4,6 @@ dockerfile = "Dockerfile.server"
 
 [deploy]
 startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
 restartPolicyMaxRetries = 5
-
-[[services]]
-name = "backend"
-rootDirectory = "server"

@@ -1,38 +1,39 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 import { v4 as uuidv4 } from 'uuid';
+import { getJwtSecret } from '../config/env.js';
+import { verifyToken } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { loginSchema, registerSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
 const generateToken = (user) => {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET || 'your-secret-key',
+    getJwtSecret(),
     { expiresIn: '7d' }
   );
 };
 
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', validate({ body: registerSchema }), async (req, res) => {
   try {
     const { email, password, fullName, phone, role = 'customer' } = req.body;
 
-    // Validate input
-    if (!email || !password || !fullName) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
     // Check if user exists
-    const { data: existingUser } = await supabaseAdmin
+    const { data: existingUser, error: existingError } = await supabaseAdmin
       .from('users')
       .select('id')
       .eq('email', email)
-      .single();
+      .maybeSingle();
+
+    if (existingError) throw existingError;
 
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
+      return res.status(409).json({ error: 'User already exists' });
     }
 
     // Hash password
@@ -76,20 +77,16 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', validate({ body: loginSchema }), async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
 
     // Get user
     const { data: user, error } = await supabaseAdmin
       .from('users')
       .select('*')
       .eq('email', email)
-      .single();
+      .maybeSingle();
 
     if (error || !user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -122,18 +119,8 @@ router.post('/login', async (req, res) => {
 });
 
 // Verify token
-router.get('/verify', (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    res.json({ valid: true, user: decoded });
-  } catch (error) {
-    res.status(401).json({ valid: false, error: 'Invalid token' });
-  }
+router.get('/verify', verifyToken, (req, res) => {
+  res.json({ valid: true, user: req.user });
 });
 
 export default router;

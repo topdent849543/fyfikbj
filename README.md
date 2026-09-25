@@ -71,11 +71,27 @@ cp .env.example .env
 # - SUPABASE_URL
 # - SUPABASE_ANON_KEY
 # - SUPABASE_SERVICE_KEY
+# - DATABASE_URL (Supabase PostgreSQL connection string, for migrations)
 # - JWT_SECRET
+# - CORS_ORIGINS (comma-separated frontend origins)
 # - NEXT_PUBLIC_API_URL
 ```
 
-### 4. تشغيل المشروع محلياً
+### 4. تهيئة قاعدة البيانات والتحقق
+
+```bash
+# من مجلد المشروع؛ يسجل الـ migration ويمنع إعادة تطبيق نسخة مختلفة
+npm run migrate
+
+# فحوصات الخادم والواجهة واختبارات smoke
+npm run check
+npm test
+npm run build
+```
+
+> في الإنتاج يجب أن تكون قيمة `JWT_SECRET` عشوائية وبطول 32 محرفاً على الأقل، ويجب ضبط `CORS_ORIGINS` على نطاقات الواجهة الفعلية فقط.
+
+### 5. تشغيل المشروع محلياً
 
 ```bash
 # Backend (من مجلد server)
@@ -85,7 +101,7 @@ npm run dev
 npm run dev
 ```
 
-افتح http://localhost:3000 في المتصفح
+افتح http://localhost:3001 في المتصفح (يعمل الـ Backend على المنفذ 3000)
 
 ## 🌐 النشر على Railway
 
@@ -196,6 +212,15 @@ topdent-platform/
 - `POST /api/cart` - إضافة للسلة
 - `PATCH /api/cart/:itemId` - تحديث الكمية
 - `DELETE /api/cart/:itemId` - حذف من السلة
+
+### المفضلة والتوصيل
+- `GET /api/favorites` - عرض المفضلة
+- `POST /api/favorites/:productId` - إضافة منتج للمفضلة
+- `DELETE /api/favorites/:productId` - إزالة منتج من المفضلة
+- `GET /api/delivery-rates/provinces` - المحافظات المتاحة
+- `GET /api/delivery-rates/quote` - حساب تكلفة التوصيل
+- `GET /api/delivery-rates/merchant` - أسعار التاجر
+- `PUT /api/delivery-rates/merchant/:speed` - إنشاء أو تحديث سعر توصيل
 
 ### المستخدمين
 - `GET /api/users/me` - بيانات المستخدم الحالي

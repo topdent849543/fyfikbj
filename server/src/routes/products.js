@@ -2,17 +2,23 @@ import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
+import { validate } from '../middleware/validate.js';
+import {
+  createProductSchema,
+  idParamsSchema,
+  productQuerySchema,
+  updateProductSchema
+} from '../validation/schemas.js';
 
 const router = express.Router();
 
 // Get all products with filters
-router.get('/', async (req, res) => {
+router.get('/', validate({ query: productQuerySchema }), async (req, res) => {
   try {
     const {
       category,
       subCategory,
       condition,
-      merchant,
       province,
       minPrice,
       maxPrice,
@@ -28,9 +34,9 @@ router.get('/', async (req, res) => {
       .from('products')
       .select(`
         *,
-        merchant:merchants(company_name, logo_url),
+        merchant:merchants!inner(company_name, logo_url, province),
         images:product_images(image_url, is_primary)
-      `)
+      `, { count: 'exact' })
       .eq('is_active', true)
       .eq('is_approved', true);
 
@@ -39,8 +45,9 @@ router.get('/', async (req, res) => {
     if (subCategory) query = query.eq('sub_category', subCategory);
     if (condition) query = query.eq('condition', condition);
     if (merchantId) query = query.eq('merchant_id', merchantId);
-    if (minPrice) query = query.gte('price', minPrice);
-    if (maxPrice) query = query.lte('price', maxPrice);
+    if (province) query = query.eq('merchant.province', province);
+    if (minPrice !== undefined) query = query.gte('price', minPrice);
+    if (maxPrice !== undefined) query = query.lte('price', maxPrice);
     if (currency) query = query.eq('currency', currency);
     if (search) query = query.ilike('name', `%${search}%`);
 
@@ -60,8 +67,8 @@ router.get('/', async (req, res) => {
     }
 
     // Pagination
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const pageNum = page;
+    const limitNum = limit;
     const offset = (pageNum - 1) * limitNum;
 
     query = query.range(offset, offset + limitNum - 1);
@@ -75,7 +82,8 @@ router.get('/', async (req, res) => {
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total: count
+        total: count ?? 0,
+        pages: Math.ceil((count ?? 0) / limitNum)
       }
     });
   } catch (error) {
@@ -84,7 +92,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get single product
-router.get('/:id', async (req, res) => {
+router.get('/:id', validate({ params: idParamsSchema }), async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('products')
@@ -94,9 +102,12 @@ router.get('/:id', async (req, res) => {
         images:product_images(image_url, is_primary)
       `)
       .eq('id', req.params.id)
-      .single();
+      .eq('is_active', true)
+      .eq('is_approved', true)
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found' });
     res.json(data);
   } catch (error) {
     res.status(404).json({ error: 'Product not found' });
@@ -104,7 +115,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create product (merchant)
-router.post('/', verifyToken, requireRole(['merchant']), async (req, res) => {
+router.post('/', verifyToken, requireRole(['merchant']), validate({ body: createProductSchema }), async (req, res) => {
   try {
     const {
       name,
@@ -158,7 +169,7 @@ router.post('/', verifyToken, requireRole(['merchant']), async (req, res) => {
     if (productError) throw productError;
 
     // Add images
-    if (images && Array.isArray(images)) {
+    if (images?.length) {
       const imageInserts = images.map((img, idx) => ({
         id: uuidv4(),
         product_id: productId,
@@ -183,63 +194,95 @@ router.post('/', verifyToken, requireRole(['merchant']), async (req, res) => {
 });
 
 // Update product (merchant)
-router.put('/:id', verifyToken, requireRole(['merchant']), async (req, res) => {
+router.put(
+  '/:id',
+  verifyToken,
+  requireRole(['merchant']),
+  validate({ params: idParamsSchema, body: updateProductSchema }),
+  async (req, res) => {
   try {
-    const { name, description, price, currency, stockQuantity, condition } = req.body;
+    const { name, code, category, subCategory, description, specifications, price, currency, stockQuantity, condition, images } = req.body;
 
-    const { data: product } = await supabase
+    const { data: product, error: productLookupError } = await supabase
       .from('products')
       .select('merchant_id')
       .eq('id', req.params.id)
-      .single();
+      .maybeSingle();
 
-    const { data: merchant } = await supabase
+    const { data: merchant, error: merchantLookupError } = await supabase
       .from('merchants')
       .select('id')
       .eq('user_id', req.user.id)
-      .single();
+      .maybeSingle();
+
+    if (productLookupError) throw productLookupError;
+    if (merchantLookupError) throw merchantLookupError;
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!merchant) return res.status(404).json({ error: 'Merchant not found' });
 
     if (product.merchant_id !== merchant.id) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
+    const updates = {
+      ...(name !== undefined && { name }),
+      ...(code !== undefined && { code }),
+      ...(category !== undefined && { category }),
+      ...(subCategory !== undefined && { sub_category: subCategory }),
+      ...(description !== undefined && { description }),
+      ...(specifications !== undefined && { specifications }),
+      ...(price !== undefined && { price }),
+      ...(currency !== undefined && { currency }),
+      ...(stockQuantity !== undefined && { stock_quantity: stockQuantity }),
+      ...(condition !== undefined && { condition }),
+      updated_at: new Date().toISOString()
+    };
+
     const { error } = await supabase
       .from('products')
-      .update({
-        name,
-        description,
-        price,
-        currency,
-        stock_quantity: stockQuantity,
-        condition,
-        updated_at: new Date()
-      })
+      .update(updates)
       .eq('id', req.params.id);
 
     if (error) throw error;
+
+    if (images !== undefined) {
+      const { error: deleteError } = await supabase.from('product_images').delete().eq('product_id', req.params.id);
+      if (deleteError) throw deleteError;
+      if (images.length > 0) {
+        const { error: imageError } = await supabase.from('product_images').insert(images.map((imageUrl, index) => ({
+          id: uuidv4(),
+          product_id: req.params.id,
+          image_url: imageUrl,
+          is_primary: index === 0
+        })));
+        if (imageError) throw imageError;
+      }
+    }
     res.json({ message: 'Product updated successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+  }
+);
 
 // Delete product (merchant/admin)
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyToken, validate({ params: idParamsSchema }), async (req, res) => {
   try {
     if (req.user.role === 'merchant') {
       const { data: merchant } = await supabase
         .from('merchants')
         .select('id')
         .eq('user_id', req.user.id)
-        .single();
+        .maybeSingle();
 
       const { data: product } = await supabase
         .from('products')
         .select('merchant_id')
         .eq('id', req.params.id)
-        .single();
+        .maybeSingle();
 
-      if (product.merchant_id !== merchant.id) {
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+      if (!merchant || product.merchant_id !== merchant.id) {
         return res.status(403).json({ error: 'Unauthorized' });
       }
     } else if (req.user.role !== 'admin') {

@@ -8,8 +8,12 @@ export const metadata = {
   title: 'TopDent - منصة متخصصة بأدوات طب الأسنان',
   description: 'منصة إلكترونية متخصصة ببيع وشراء وعرض أدوات ومنتجات ومستلزمات طب الأسنان',
   keywords: ['طب الأسنان', 'أدوات الأسنان', 'منتجات الأسنان', 'e-commerce'],
-  viewport: 'width=device-width, initial-scale=1',
   robots: 'index, follow',
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1
 };
 
 export default function RootLayout({ children }) {

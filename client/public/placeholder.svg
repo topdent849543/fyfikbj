@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title desc">
+  <title id="title">لا توجد صورة</title>
+  <desc id="desc">صورة بديلة لمنتج TopDent</desc>
+  <rect width="800" height="600" fill="#f1f5f9"/>
+  <circle cx="400" cy="255" r="105" fill="#dbeafe"/>
+  <path d="M334 217c18-42 114-42 132 0 19 46-22 57-27 111-4 42-27 64-39 16-12 48-35 26-39-16-5-54-46-65-27-111Z" fill="#2563eb" opacity=".88"/>
+  <text x="400" y="430" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="#334155">TopDent</text>
+</svg>

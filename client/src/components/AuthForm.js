@@ -21,7 +21,10 @@ export default function AuthForm({ mode = 'login', role = 'customer' }) {
     setError('');
     setLoading(true);
     try {
-      const response = await api.post(isRegister ? '/auth/register' : '/auth/login', isRegister ? { ...form, role } : form);
+      const payload = isRegister
+        ? { ...form, role }
+        : { email: form.email, password: form.password };
+      const response = await api.post(isRegister ? '/auth/register' : '/auth/login', payload);
       login(response.user, response.token);
       router.push('/');
     } catch (err) {

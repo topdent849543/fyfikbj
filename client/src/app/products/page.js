@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { FiShoppingCart, FiHeart, FiFilter, FiX } from 'react-icons/fi';
 import api from '@/lib/api';
@@ -17,11 +17,7 @@ export default function ProductsPage() {
     sortBy: 'newest'
   });
 
-  useEffect(() => {
-    fetchProducts();
-  }, [filters]);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
       const queryParams = new URLSearchParams();
@@ -39,7 +35,11 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));

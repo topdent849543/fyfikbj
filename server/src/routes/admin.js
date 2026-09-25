@@ -2,6 +2,8 @@ import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
+import { validate } from '../middleware/validate.js';
+import { createDiscountSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
@@ -145,7 +147,12 @@ router.patch('/orders/:id/payment', verifyToken, requireRole(['admin']), async (
 });
 
 // Create discount code
-router.post('/discounts', verifyToken, requireRole(['admin']), async (req, res) => {
+router.post(
+  '/discounts',
+  verifyToken,
+  requireRole(['admin']),
+  validate({ body: createDiscountSchema }),
+  async (req, res) => {
   try {
     const { code, discountPercentage, discountAmount, maxUses, expiresAt } = req.body;
 
@@ -157,7 +164,9 @@ router.post('/discounts', verifyToken, requireRole(['admin']), async (req, res) 
         discount_percentage: discountPercentage,
         discount_amount: discountAmount,
         max_uses: maxUses,
-        expires_at: expiresAt
+        current_uses: 0,
+        expires_at: expiresAt?.toISOString() || null,
+        is_active: true
       }]);
 
     if (error) throw error;
@@ -165,7 +174,8 @@ router.post('/discounts', verifyToken, requireRole(['admin']), async (req, res) 
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+  }
+);
 
 // Manage banners
 router.get('/banners', verifyToken, requireRole(['admin']), async (req, res) => {

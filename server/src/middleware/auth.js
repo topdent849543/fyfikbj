@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { supabase } from '../config/supabase.js';
+import { getJwtSecret } from '../config/env.js';
 
 export const verifyToken = async (req, res, next) => {
   try {
@@ -8,7 +8,7 @@ export const verifyToken = async (req, res, next) => {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, getJwtSecret());
     req.user = decoded;
     next();
   } catch (error) {

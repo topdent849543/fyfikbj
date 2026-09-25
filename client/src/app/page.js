@@ -26,7 +26,7 @@ export default function HomePage() {
   const fetchProducts = async () => {
     try {
       const response = await api.get('/products?limit=12');
-      setProducts(response.data.products);
+      setProducts(response.products);
     } catch (error) {
       console.error('Failed to fetch products', error);
     } finally {

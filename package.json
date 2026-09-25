@@ -4,13 +4,13 @@
   "description": "TopDent - Professional E-commerce Platform for Dental Tools & Products",
   "private": true,
   "scripts": {
-    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "install-all": "npm ci && npm --prefix server ci && npm --prefix client ci",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "build": "npm run build:server && npm run build:client",
-    "build:server": "cd server && npm install",
-    "build:client": "cd client && npm install && npm run build",
+    "build:server": "npm --prefix server run check",
+    "build:client": "npm --prefix client run build",
     "start": "npm run start:server",
     "start:server": "cd server && npm start",
     "start:client": "cd client && npm start",
@@ -18,8 +18,10 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
-    "lint": "cd server && npm run lint && cd ../client && npm run lint",
-    "migrate": "cd server && npm run migrate"
+    "lint": "npm --prefix client run lint",
+    "check": "npm --prefix server run check && npm --prefix client run lint",
+    "test": "npm --prefix server test",
+    "migrate": "npm --prefix server run migrate"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"
