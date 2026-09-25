@@ -1,0 +1,9 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import RequireAuth from '@/components/RequireAuth';
+import api from '@/lib/api';
+import { apiError, formatDate } from '@/lib/format';
+
+function NotificationsContent() { const [notifications, setNotifications] = useState([]); const [error, setError] = useState(''); useEffect(() => { api.get('/users/notifications?limit=100').then((response) => setNotifications(response.notifications || [])).catch((err) => setError(apiError(err))); }, []); const read = async (id) => { try { await api.patch(`/users/notifications/${id}/read`); setNotifications((current) => current.map((item) => item.id === id ? { ...item, is_read: true } : item)); } catch (err) { setError(apiError(err)); } }; return <div className="min-h-screen bg-secondary-50 py-8"><div className="container-main max-w-3xl"><h1 className="text-3xl font-black">الإشعارات</h1>{error && <p className="mt-5 text-red-700">{error}</p>}<div className="mt-7 space-y-3">{notifications.map((item) => <button key={item.id} onClick={() => !item.is_read && read(item.id)} className={`block w-full rounded-2xl p-5 text-right shadow-card ${item.is_read ? 'bg-white' : 'border border-primary-200 bg-primary-50'}`}><div className="flex justify-between gap-4"><p className="font-black">{item.title}</p><time className="shrink-0 text-xs text-secondary-500">{formatDate(item.created_at, true)}</time></div><p className="mt-2 text-sm leading-6 text-secondary-600">{item.message}</p>{!item.is_read && <span className="mt-3 inline-block text-xs font-bold text-primary-700">اضغط للتعليم كمقروء</span>}</button>)}</div>{!notifications.length && <div className="mt-7 rounded-2xl bg-white p-10 text-center shadow-card">لا توجد إشعارات حالياً.</div>}</div></div>; }
+export default function NotificationsPage() { return <RequireAuth><NotificationsContent /></RequireAuth>; }

@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError, audit, normalizeArabic, pageRange, notify } from '../lib/http.js';
-import { assertOrderAccess, getOrderWithRelations, transitionOrder } from '../lib/orderWorkflow.js';
+import { assertOrderAccess, getOrderWithRelations, roleCanTransition, transitionOrder } from '../lib/orderWorkflow.js';
 import { assignDriverSchema, createOrderSchema, driverProofSchema, idParamsSchema, moneyReceiptSchema, orderQuoteSchema, orderStatusSchema } from '../validation/schemas.js';
 
 const router = express.Router();
@@ -271,6 +271,17 @@ router.get('/manager/queue', verifyToken, requireRole(['manager', 'admin']), asy
   res.json({ orders: data || [], pagination: { page, limit, total: count || 0, pages: Math.ceil((count || 0) / limit) } });
 }));
 
+router.get('/manager/drivers', verifyToken, requireRole(['manager', 'admin']), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('driver_profiles')
+    .select('id, is_available, user:users(id, full_name, phone, is_active)')
+    .eq('is_available', true)
+    .eq('user.is_active', true)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  res.json({ drivers: data || [] });
+}));
+
 router.get('/driver/assignments', verifyToken, requireRole(['driver']), asyncHandler(async (req, res) => {
   const { data: driver, error: driverError } = await supabaseAdmin.from('driver_profiles').select('id').eq('user_id', req.user.id).maybeSingle();
   if (driverError) throw driverError;
@@ -291,6 +302,16 @@ router.get('/:id', verifyToken, validate({ params: idParamsSchema }), asyncHandl
 router.patch('/:id/status', verifyToken, validate({ params: idParamsSchema, body: orderStatusSchema }), asyncHandler(async (req, res) => {
   const order = await getOrderWithRelations(req.params.id);
   await assertOrderAccess(order, req.user);
+  if (order.order_type === 'parent' && req.body.status === 'cancelled') {
+    const { data: children, error } = await supabaseAdmin.from('orders').select('id, status').eq('parent_order_id', order.id).eq('order_type', 'merchant');
+    if (error) throw error;
+    const blocked = (children || []).find((child) => !roleCanTransition(req.user.role, child.status, 'cancelled'));
+    if (blocked) throw new AppError(409, 'لا يمكن إلغاء الطلب المجمع بعد بدء مرحلة التوصيل أو التحصيل', 'PARENT_CANCELLATION_BLOCKED');
+    for (const child of children || []) {
+      const childOrder = await getOrderWithRelations(child.id);
+      await transitionOrder({ order: childOrder, actor: req.user, toStatus: 'cancelled', reason: req.body.reason || 'إلغاء العميل للطلب المجمع' });
+    }
+  }
   const updated = await transitionOrder({ order, actor: req.user, toStatus: req.body.status, reason: req.body.reason });
   res.json({ message: 'تم تحديث حالة الطلب', order: updated });
 }));

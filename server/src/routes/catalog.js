@@ -4,6 +4,13 @@ import { asyncHandler, pageRange } from '../lib/http.js';
 
 const router = express.Router();
 
+router.get('/settings', asyncHandler(async (req, res) => {
+  const publicKeys = ['social_whatsapp', 'social_facebook', 'social_instagram', 'social_telegram', 'contact_email', 'contact_phone', 'about_text'];
+  const { data, error } = await supabaseAdmin.from('settings').select('key, value').in('key', publicKeys);
+  if (error) throw error;
+  res.json({ settings: Object.fromEntries((data || []).map((item) => [item.key, item.value])) });
+}));
+
 router.get('/banners', asyncHandler(async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('banners')

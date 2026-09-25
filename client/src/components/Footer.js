@@ -1,94 +1,25 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { FaFacebook, FaInstagram, FaTwitter, FaWhatsapp } from 'react-icons/fa';
+import { FaFacebook, FaInstagram, FaTelegramPlane, FaWhatsapp } from 'react-icons/fa';
 import { FiMail, FiPhone } from 'react-icons/fi';
+import api from '@/lib/api';
 
 export default function Footer() {
-  const year = new Date().getFullYear();
+  const [settings, setSettings] = useState({});
+  useEffect(() => { api.get('/catalog/settings').then((result) => setSettings(result.settings || {})).catch(() => setSettings({})); }, []);
+  const social = [
+    [settings.social_whatsapp, FaWhatsapp, 'واتساب', 'text-emerald-300'], [settings.social_facebook, FaFacebook, 'فيسبوك', 'text-blue-300'],
+    [settings.social_instagram, FaInstagram, 'إنستغرام', 'text-pink-300'], [settings.social_telegram, FaTelegramPlane, 'تيليغرام', 'text-sky-300']
+  ].filter(([href]) => href);
 
-  return (
-    <footer className="bg-secondary-900 text-secondary-100">
-      <div className="container-main py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
-          <div>
-            <h3 className="text-2xl font-bold text-white mb-4">TopDent</h3>
-            <p className="text-secondary-400 mb-6 leading-relaxed">
-              منصة متخصصة بيع وشراء أدوات ومنتجات ومستلزمات طب الأسنان، تربط بين الزبائن والتجار والعيادات.
-            </p>
-            <div className="flex gap-4">
-              <a href="#" className="p-2 hover:bg-primary-600 rounded-lg transition-colors"><FaFacebook /></a>
-              <a href="#" className="p-2 hover:bg-primary-600 rounded-lg transition-colors"><FaInstagram /></a>
-              <a href="#" className="p-2 hover:bg-primary-600 rounded-lg transition-colors"><FaTwitter /></a>
-              <a href="#" className="p-2 hover:bg-primary-600 rounded-lg transition-colors"><FaWhatsapp /></a>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="text-lg font-bold text-white mb-6">الروابط السريعة</h4>
-            <nav className="space-y-3">
-              <Link href="/products" className="block hover:text-primary-400 transition-colors">جميع المنتجات</Link>
-              <Link href="/categories" className="block hover:text-primary-400 transition-colors">الأقسام</Link>
-              <Link href="/offers" className="block hover:text-primary-400 transition-colors">العروض والخصومات</Link>
-              <Link href="/merchant/register" className="block hover:text-primary-400 transition-colors">أفتح متجرك</Link>
-            </nav>
-          </div>
-
-          <div>
-            <h4 className="text-lg font-bold text-white mb-6">خدمة العملاء</h4>
-            <nav className="space-y-3">
-              <Link href="/help" className="block hover:text-primary-400 transition-colors">الدعم والمساعدة</Link>
-              <Link href="/faq" className="block hover:text-primary-400 transition-colors">الأسئلة الشائعة</Link>
-              <Link href="/return-policy" className="block hover:text-primary-400 transition-colors">سياسة الإرجاع</Link>
-              <Link href="/shipping" className="block hover:text-primary-400 transition-colors">معلومات الشحن</Link>
-            </nav>
-          </div>
-
-          <div>
-            <h4 className="text-lg font-bold text-white mb-6">اتصل بنا</h4>
-            <div className="space-y-4">
-              <a href="tel:+1234567890" className="flex items-center gap-3 hover:text-primary-400 transition-colors"><FiPhone /><span>+1 234 567 890</span></a>
-              <a href="https://wa.me/1234567890" className="flex items-center gap-3 hover:text-primary-400 transition-colors"><FaWhatsapp /><span>WhatsApp</span></a>
-              <a href="mailto:info@topdent.com" className="flex items-center gap-3 hover:text-primary-400 transition-colors"><FiMail /><span>info@topdent.com</span></a>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-secondary-700 pt-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
-            <div>
-              <h5 className="font-bold text-white mb-3">المعلومات القانونية</h5>
-              <div className="space-y-2">
-                <Link href="/terms" className="block text-secondary-400 hover:text-primary-400 text-sm">الشروط والأحكام</Link>
-                <Link href="/privacy" className="block text-secondary-400 hover:text-primary-400 text-sm">سياسة الخصوصية</Link>
-                <Link href="/cookies" className="block text-secondary-400 hover:text-primary-400 text-sm">سياسة ملفات الارتباط</Link>
-              </div>
-            </div>
-            <div>
-              <h5 className="font-bold text-white mb-3">للعاملين</h5>
-              <div className="space-y-2">
-                <Link href="/careers" className="block text-secondary-400 hover:text-primary-400 text-sm">فرص العمل</Link>
-                <Link href="/blog" className="block text-secondary-400 hover:text-primary-400 text-sm">المدونة</Link>
-                <Link href="/press" className="block text-secondary-400 hover:text-primary-400 text-sm">الإعلام</Link>
-              </div>
-            </div>
-            <div>
-              <h5 className="font-bold text-white mb-3">التطبيق</h5>
-              <div className="space-y-2">
-                <p className="text-secondary-400 text-sm">حمّل التطبيق على جهازك:</p>
-                <div className="flex gap-2">
-                  <button className="px-3 py-2 bg-primary-600 hover:bg-primary-700 rounded-lg text-sm font-medium transition-colors">iOS</button>
-                  <button className="px-3 py-2 bg-primary-600 hover:bg-primary-700 rounded-lg text-sm font-medium transition-colors">Android</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="text-center border-t border-secondary-700 pt-8">
-            <p className="text-secondary-400 text-sm">جميع الحقوق محفوظة © {year} TopDent. جميع الحقوق محفوظة.</p>
-            <p className="text-secondary-500 text-xs mt-2">صُمم بكل ❤️ من قبل فريق TopDent</p>
-          </div>
-        </div>
-      </div>
-    </footer>
-  );
+  return <footer className="bg-secondary-900 text-secondary-200"><div className="container-main py-14">
+    <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+      <section><h2 className="mb-4 text-2xl font-black text-white">TopDent</h2><p className="leading-7 text-secondary-300">{settings.about_text || 'منصة متخصصة تربط طلاب وأطباء وعيادات الأسنان بالشركات والتجار، مع طلبات قابلة للمتابعة من البداية حتى التسليم.'}</p>{social.length > 0 && <div className="mt-5 flex items-center gap-3">{social.map(([href, Icon, label, color]) => <a key={label} href={href} target="_blank" rel="noreferrer" aria-label={label} className={`rounded-lg bg-secondary-800 p-3 text-lg hover:bg-secondary-700 ${label === 'واتساب' ? 'scale-110 bg-emerald-700 text-white' : color}`}><Icon /></a>)}</div>}</section>
+      <section><h3 className="mb-4 font-bold text-white">التسوق والخدمات</h3><nav className="space-y-3 text-sm"><Link href="/products" className="block hover:text-primary-300">المنتجات</Link><Link href="/products?condition=used" className="block hover:text-primary-300">الأدوات المستعملة</Link><Link href="/sell" className="block hover:text-primary-300">عرض منتج للبيع</Link><Link href="/rentals" className="block hover:text-primary-300">استئجار أدوات</Link><Link href="/dental-card" className="block hover:text-primary-300">تصميم كرت طبيب</Link><Link href="/offers" className="block hover:text-primary-300">العروض</Link></nav></section>
+      <section><h3 className="mb-4 font-bold text-white">معلومات المنصة</h3><nav className="space-y-3 text-sm"><Link href="/about" className="block hover:text-primary-300">من نحن</Link><Link href="/guide" className="block hover:text-primary-300">دليل المستخدم</Link><Link href="/policy" className="block hover:text-primary-300">سياسة التطبيق</Link><Link href="/services" className="block hover:text-primary-300">خدمات التطبيق</Link><Link href="/terms" className="block hover:text-primary-300">الشروط والخصوصية</Link></nav></section>
+      <section><h3 className="mb-4 font-bold text-white">التواصل</h3><div className="space-y-4 text-sm">{settings.contact_phone && <a href={`tel:${settings.contact_phone}`} className="flex items-center gap-3 hover:text-primary-300"><FiPhone />{settings.contact_phone}</a>}{settings.contact_email && <a href={`mailto:${settings.contact_email}`} className="flex items-center gap-3 hover:text-primary-300"><FiMail />{settings.contact_email}</a>}{!settings.contact_phone && !settings.contact_email && <p className="leading-6 text-secondary-400">تُدار بيانات التواصل وروابط الشبكات الاجتماعية من لوحة الإدارة قبل الإطلاق.</p>}</div></section>
+    </div><div className="mt-12 border-t border-secondary-700 pt-6 text-center text-xs text-secondary-400">© {new Date().getFullYear()} TopDent. جميع الحقوق محفوظة.</div>
+  </div></footer>;
 }
