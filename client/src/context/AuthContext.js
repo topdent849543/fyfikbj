@@ -58,7 +58,12 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const value = useMemo(() => ({ user, isLoading, isAuthenticated: Boolean(user), login, logout }), [user, isLoading]);
+  const value = useMemo(() => {
+    const can = (permission) => Boolean(user?.isPlatformOwner || user?.permissions?.includes(permission));
+    const canAny = (permissions) => Boolean(user?.isPlatformOwner || permissions?.some((permission) => user?.permissions?.includes(permission)));
+    const canAll = (permissions) => Boolean(user?.isPlatformOwner || permissions?.every((permission) => user?.permissions?.includes(permission)));
+    return { user, isLoading, isAuthenticated: Boolean(user), login, logout, can, canAny, canAll };
+  }, [user, isLoading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

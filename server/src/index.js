@@ -19,6 +19,7 @@ import deliveryRateRoutes from './routes/deliveryRates.js';
 import catalogRoutes from './routes/catalog.js';
 import rentalRoutes from './routes/rentals.js';
 import dentalCardRoutes from './routes/dentalCards.js';
+import platformRoutes from './routes/platform.js';
 
 const PORT = process.env.PORT || 3000;
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 500, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'تم تجاوز عدد الطلبات المسموح. حاول لاحقاً.', code: 'RATE_LIMITED' } });
@@ -61,6 +62,7 @@ export function createApp() {
   app.use('/api/upload', uploadRoutes);
   app.use('/api/rentals', rentalRoutes);
   app.use('/api/dental-cards', dentalCardRoutes);
+  app.use('/api/platform', platformRoutes);
   app.use('/api', notFound);
   app.use(errorMiddleware);
   return app;

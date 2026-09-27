@@ -170,7 +170,7 @@ export const orderQuoteSchema = z.object({
 });
 
 export const orderStatusSchema = z.object({
-  status: z.enum(['new', 'pending_review', 'approved', 'preparing', 'assigned_to_driver', 'in_delivery', 'arrived', 'delivered', 'awaiting_payment', 'payment_received', 'rejected', 'cancelled', 'completed', 'archive']),
+  status: z.enum(['new', 'pending_review', 'approved', 'preparing', 'ready_for_delivery', 'assigned_to_driver', 'in_delivery', 'arrived', 'delivered', 'final_review', 'failed_delivery', 'needs_follow_up', 'awaiting_payment', 'payment_received', 'rejected', 'cancelled', 'completed', 'archive']),
   reason: optionalText(1000)
 }).strict();
 export const assignDriverSchema = z.object({ driverId: uuid, note: optionalText(1000) }).strict();
@@ -217,3 +217,39 @@ export const settingSchema = z.object({ key: z.string().trim().min(2).max(255).r
 export const paymentReviewSchema = z.object({ approved: z.boolean(), note: optionalText(2000) }).strict();
 export const provinceSchema = z.object({ name: trimmedString(2, 100), isActive: z.boolean().default(true) }).strict();
 export const rentalStatusSchema = z.object({ status: z.enum(['new', 'pending_review', 'approved', 'rejected', 'ready', 'active', 'returned', 'closed', 'cancelled']), managerNote: optionalText(5000), returnCondition: optionalText(5000) }).strict();
+export const accountStatusSchema = z.enum(['active', 'inactive', 'suspended', 'pending']);
+export const companyCreateSchema = z.object({
+  managerUserId: uuid,
+  companyName: trimmedString(2, 255),
+  phone: phone.optional().nullable(),
+  whatsapp: phone.optional().nullable(),
+  province: optionalText(100),
+  area: optionalText(150),
+  contactEmail: z.string().trim().email().max(255).optional().nullable(),
+  description: optionalText(5000),
+  logoUrl: optionalUrl,
+  dollarRate: positiveMoney.optional()
+}).strict();
+export const companyUpdateSchema = z.object({
+  companyName: trimmedString(2, 255).optional(),
+  phone: phone.optional().nullable(),
+  whatsapp: phone.optional().nullable(),
+  province: optionalText(100),
+  area: optionalText(150),
+  description: optionalText(5000),
+  logoUrl: optionalUrl,
+  dollarRate: positiveMoney.optional()
+}).strict().refine((value) => Object.keys(value).length > 0, 'حدد حقلاً واحداً على الأقل');
+export const companyStatusSchema = z.object({ isActive: z.boolean() }).strict();
+export const userStatusSchema = z.object({ accountStatus: accountStatusSchema }).strict();
+export const roleCreateSchema = z.object({ key: z.string().trim().min(3).max(100).regex(/^[a-z][a-z0-9_]*$/), nameAr: trimmedString(2, 255), description: optionalText(2000) }).strict();
+export const roleUpdateSchema = z.object({ nameAr: trimmedString(2, 255).optional(), description: optionalText(2000), is_active: z.boolean().optional() }).strict().refine((value) => Object.keys(value).length > 0, 'حدد تغييراً واحداً على الأقل');
+export const rolePermissionsSchema = z.object({ permissionIds: z.array(uuid).max(200) }).strict();
+export const roleAssignmentSchema = z.object({ userId: uuid, roleId: uuid, companyId: uuid.optional().nullable(), scopeType: z.enum(['global', 'company']) }).strict();
+export const driverCreateSchema = z.object({ userId: uuid, driverType: z.enum(['platform', 'company']), companyId: uuid.optional().nullable(), vehicleInfo: z.record(z.unknown()).optional().default({}), plateNumber: optionalText(100), isAvailable: z.boolean().default(true) }).strict().superRefine((value, ctx) => { if (value.driverType === 'company' && !value.companyId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['companyId'], message: 'شركة السائق مطلوبة' }); if (value.driverType === 'platform' && value.companyId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['companyId'], message: 'السائق العام لا يرتبط بشركة' }); });
+export const driverStatusSchema = z.object({ isActive: z.boolean(), isAvailable: z.boolean().optional() }).strict();
+export const deliveryIssueSchema = z.object({ issueType: z.enum(['customer_not_available', 'customer_refused', 'wrong_address', 'payment_problem', 'missing_product', 'other']), notes: optionalText(2000) }).strict();
+export const notificationBroadcastSchema = z.object({ title: trimmedString(2, 255), message: trimmedString(1, 5000), type: z.string().trim().min(2).max(50).default('admin'), userIds: z.array(uuid).max(1000).optional().default([]), companyId: uuid.optional().nullable(), allUsers: z.boolean().optional().default(false), orderId: uuid.optional().nullable() }).strict();
+export const productStatusSchema = z.object({ status: z.enum(['approved', 'rejected', 'inactive', 'archive']), reason: optionalText(1000) }).strict();
+export const platformUserCreateSchema = z.object({ email: z.string().trim().email().max(255).transform((value) => value.toLowerCase()), password: z.string().min(12).max(128), fullName: trimmedString(6, 255), phone: phone.optional().nullable(), whatsapp: phone.optional().nullable(), province: optionalText(100), area: optionalText(150), address: optionalText(500), companyId: uuid.optional().nullable() }).strict();
+export const platformProductUpdateSchema = z.object({ name: trimmedString(2, 255).optional(), description: trimmedString(10, 10000).optional(), price: positiveMoney.optional(), stockQuantity: z.coerce.number().int().min(0).max(1000000).optional(), isActive: z.boolean().optional(), status: z.enum(['pending', 'approved', 'rejected', 'inactive']).optional() }).strict().refine((value) => Object.keys(value).length > 0, 'حدد حقلاً واحداً على الأقل');

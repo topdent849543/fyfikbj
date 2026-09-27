@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { getJwtSecret } from '../config/env.js';
 import { supabaseAdmin } from '../config/supabase.js';
+import { hasCompatibleLegacyRole, loadUserAccess } from '../services/permissionService.js';
 
 export const verifyToken = async (req, res, next) => {
   try {
@@ -10,21 +11,25 @@ export const verifyToken = async (req, res, next) => {
     const decoded = jwt.verify(token, getJwtSecret());
     const { data: user, error } = await supabaseAdmin
       .from('users')
-      .select('id, email, role, is_active, full_name')
+      .select('id, email, role, is_active, account_status, full_name')
       .eq('id', decoded.id)
       .maybeSingle();
     if (error) return next(error);
-    if (!user || !user.is_active) return res.status(401).json({ error: 'الحساب غير متاح', code: 'ACCOUNT_DISABLED' });
+    if (!user || !user.is_active || user.account_status !== 'active') {
+      return res.status(401).json({ error: 'الحساب غير متاح', code: 'ACCOUNT_DISABLED' });
+    }
 
-    req.user = { id: user.id, email: user.email, role: user.role, fullName: user.full_name };
+    req.user = await loadUserAccess(user);
+    if (!req.user.isActive) return res.status(401).json({ error: 'الحساب غير متاح', code: 'ACCOUNT_DISABLED' });
     return next();
   } catch {
     return res.status(401).json({ error: 'انتهت صلاحية الجلسة أو التوكن غير صالح', code: 'INVALID_TOKEN' });
   }
 };
 
+// Compatibility bridge for routes that remain on the legacy role vocabulary.
 export const requireRole = (roles) => (req, res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
+  if (!hasCompatibleLegacyRole(req.user, roles)) {
     return res.status(403).json({ error: 'ليس لديك صلاحية لتنفيذ هذا الإجراء', code: 'ROLE_FORBIDDEN' });
   }
   return next();

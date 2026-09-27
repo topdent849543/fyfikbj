@@ -9,7 +9,7 @@
 | Layer | Technology | Responsibility |
 |---|---|---|
 | Client | Next.js 14, React, Tailwind CSS | RTL storefront, shopping flow, product submissions, service requests, and dashboards |
-| API | Node.js, Express, Zod | Authentication, role-based authorization, validation, workflow transitions, checkout, and operations |
+| API | Node.js, Express, Zod | Authentication, RBAC/Scope authorization, validation, workflow transitions, checkout, and operations |
 | Data | Supabase PostgreSQL | Relational commerce data, audit trail, status history, snapshots, reporting, and workflows |
 | Media | Supabase Storage | Validated, resized WebP images with asset tracking and orphan cleanup |
 | Email | SMTP via Nodemailer | Password reset messages when SMTP is configured |
@@ -27,20 +27,45 @@ stateDiagram-v2
   pending_review --> approved
   pending_review --> rejected
   approved --> preparing
-  preparing --> assigned_to_driver
+  preparing --> ready_for_delivery
+  ready_for_delivery --> assigned_to_driver
   assigned_to_driver --> in_delivery
   in_delivery --> arrived
   arrived --> delivered
-  delivered --> awaiting_payment
-  awaiting_payment --> payment_received
-  payment_received --> completed
+  delivered --> final_review
+  final_review --> completed
   completed --> archive
   new --> cancelled
   pending_review --> cancelled
   approved --> cancelled
+  in_delivery --> failed_delivery
+  in_delivery --> needs_follow_up
+  delivered --> needs_follow_up
 ```
 
-The API verifies every transition against the actor role. Customers may cancel eligible early-stage orders, merchants can prepare only their own orders, managers approve/reject/assign and confirm cash receipt, drivers update delivery evidence and cash collection, and administrators have full supervisory access.
+The API verifies every transition against the actor's **effective permissions and scope**, not merely the historical primary role. Customers may cancel eligible early-stage orders, company users work only within their assigned company, drivers can operate only their assigned orders, and `platform_owner` is the audited emergency override. Legacy `awaiting_payment` and `payment_received` transitions remain only as safe compatibility bridges for pre-upgrade orders.
+
+## RBAC, scopes, and account status
+
+`006_rbac_permissions.sql` introduces an additive authorization model. Existing `users.role` remains in place for compatibility, but all new platform APIs use the effective session model below:
+
+```text
+User + active account status + active role assignment + explicit permissions + scope + company assignment
+```
+
+| System role | Scope | Default behavior |
+|---|---|---|
+| `platform_owner` | Global | Protected bootstrap-only owner; bypass is logged. It cannot be public-registered, disabled, downgraded, or assigned over the API. |
+| `platform_admin` | Global | No automatic permissions. The owner assigns explicit permissions. |
+| `company_manager` | One company | Operational product, order, team, driver, and finance access for the assigned company only. |
+| `company_admin` | One company | Starts without operational permissions; the company manager grants only required access. |
+| `platform_driver` | Global assignment, assigned orders only | Can operate assigned delivery tasks; no administrative rights. |
+| `company_driver` | One company, assigned orders only | Cannot view or operate another company's orders. |
+| `customer` | Self | Storefront, cart, own orders, favorites, services, and personal listings. |
+
+An active role assignment has `scope_type` of `global` or `company`; company roles must include a company ID. The API rejects cross-company direct URLs with `403`. Accounts use `active`, `inactive`, `suspended`, or `pending`; anything except `active` is rejected immediately by token verification. The `is_active` field remains synchronized for older routes.
+
+The role matrix is stored in `roles`, `permissions`, `role_permissions`, and `user_role_assignments`. The migration seeds the requested permissions (for example `orders.approve`, `finance.confirm_payment`, and `audit.view`) and creates a temporary `legacy_platform_operator` only for pre-existing legacy `admin` accounts, preserving currently deployed capabilities without giving new platform administrators automatic access.
 
 ## Database migrations
 
@@ -51,6 +76,7 @@ The original schema is preserved in `server/src/db/migrations.sql`. New idempote
 3. `003_media_assets.sql` tracks durable uploaded objects and their ownership.
 4. `004_discount_redemption.sql` consumes discount use atomically and prevents quota races.
 5. `005_personal_sellers.sql` supports customer-owned used-product listings.
+6. `006_rbac_permissions.sql` adds RBAC, company scope, account lifecycle, protected owner assignments, driver types, delivery issues, invoice snapshots, and auditable collection confirmation.
 
 Apply migrations using a Supabase service role key:
 
@@ -80,14 +106,14 @@ cp .env.example .env
 
 Required API variables are `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, and a strong `JWT_SECRET` of at least 32 characters. `CORS_ORIGINS` must contain the precise comma-separated frontend origins. In production, use a dedicated service key with minimal administrative access and rotate it if exposed.
 
-### 3. Apply schema and bootstrap the first administrator
+### 3. Apply schema and bootstrap the first Platform Owner
 
 ```bash
 npm --prefix server run migrate
-ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='use-a-long-unique-password' ADMIN_NAME='TopDent Admin' npm --prefix server run seed:admin
+PLATFORM_OWNER_EMAIL=owner@example.com PLATFORM_OWNER_PASSWORD='a-long-unique-secret-of-at-least-16-characters' PLATFORM_OWNER_NAME='مالك TopDent' npm --prefix server run seed:owner
 ```
 
-The bootstrap command creates an administrator if it does not exist; otherwise it promotes that existing account. It requires the actual Supabase configuration in `.env`.
+The bootstrap command creates the first protected owner if it does not exist, or safely reactivates the same bootstrap identity. It refuses to create a second owner unless the documented recovery environment flag is deliberately set. Never add bootstrap credentials to `.env.example`, source files, commits, or tickets.
 
 ### 4. Run services
 
@@ -106,7 +132,23 @@ npm test
 npm run build
 ```
 
-The smoke suite verifies health isolation, strict CORS, request validation, mandatory JWT configuration, commerce validation invariants, and role-specific order workflow transitions. A complete live integration run additionally requires a real Supabase project with the migrations applied.
+The test suite verifies health isolation, strict CORS, request validation, mandatory JWT configuration, commerce validation invariants, legacy-safe workflow transitions, role-independent RBAC permission resolution, company-scope isolation, and final-review order behavior. A complete live integration run additionally requires a real Supabase project with the migrations applied.
+
+## Platform management API
+
+All `/api/platform/*` routes require a verified active account and a matching backend permission; hiding an item in the dashboard is never authorization. Key routes are:
+
+| Area | Routes |
+|---|---|
+| Dashboard and reports | `GET /api/platform/dashboard`, `GET /api/platform/reports?format=csv` |
+| Companies and users | `GET/POST /api/platform/companies`, `GET/PATCH /api/platform/companies/:id`, `PATCH /api/platform/companies/:id/status`, `GET/POST /api/platform/users`, `PATCH /api/platform/users/:id/status` |
+| Roles | `GET/POST /api/platform/roles`, `PATCH /api/platform/roles/:id`, `PUT /api/platform/roles/:id/permissions`, `POST /api/platform/roles/assign` |
+| Products | `GET /api/platform/products`, `PATCH /api/platform/products/:id`, `PATCH /api/platform/products/:id/status`, plus scoped company product creation through `POST /api/products` |
+| Orders and delivery | `GET /api/platform/orders`, `PATCH /api/platform/orders/:id/status`, `POST /api/platform/orders/:id/assign-driver`, `POST /api/platform/orders/:id/issues` |
+| Finance and audit | `GET /api/platform/collections`, `POST /api/platform/collections/:id/confirm`, `GET /api/platform/invoices`, `GET /api/platform/invoices/:id/export`, `GET /api/platform/audit-log` |
+| Notifications and settings | `POST /api/platform/notifications`, `GET/PATCH /api/platform/settings` |
+
+`GET /api/platform/invoices/:id/export` and `GET /api/platform/reports?format=csv` provide CSV exports. Invoices are generated from immutable order/item snapshots when a merchant order reaches `completed`.
 
 ## Deployment plan
 

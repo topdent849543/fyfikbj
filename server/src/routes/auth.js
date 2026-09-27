@@ -14,7 +14,21 @@ const router = express.Router();
 const tokenExpiry = process.env.JWT_EXPIRES_IN || '7d';
 
 function publicUser(user) {
-  return { id: user.id, email: user.email, fullName: user.full_name, role: user.role, isActive: user.is_active };
+  return { id: user.id, email: user.email, fullName: user.full_name, role: user.role, accountStatus: user.account_status || (user.is_active ? 'active' : 'inactive'), isActive: user.is_active };
+}
+
+async function assignSystemRole({ userId, roleKey, companyId = null }) {
+  const { data: role, error: roleError } = await supabaseAdmin.from('roles').select('id').eq('key', roleKey).single();
+  if (roleError) throw roleError;
+  let lookup = supabaseAdmin.from('user_role_assignments').select('id').eq('user_id', userId).eq('role_id', role.id);
+  lookup = companyId ? lookup.eq('company_id', companyId) : lookup.is('company_id', null);
+  const { data: existing, error: existingError } = await lookup.maybeSingle();
+  if (existingError) throw existingError;
+  const payload = { user_id: userId, role_id: role.id, company_id: companyId, scope_type: companyId ? 'company' : 'global', is_active: true, updated_at: new Date().toISOString() };
+  const { error } = existing
+    ? await supabaseAdmin.from('user_role_assignments').update(payload).eq('id', existing.id)
+    : await supabaseAdmin.from('user_role_assignments').insert(payload);
+  if (error) throw error;
 }
 
 function generateToken(user) {
@@ -55,6 +69,7 @@ router.post('/register', validate({ body: registerSchema }), asyncHandler(async 
   const passwordHash = await bcrypt.hash(account.password, 12);
   const { data: user, error } = await supabaseAdmin.from('users').insert(userInsert(account, passwordHash)).select().single();
   if (error) throw error;
+  await assignSystemRole({ userId: user.id, roleKey: 'customer' });
   await audit(user.id, 'customer_registered', 'user', user.id);
   res.status(201).json({ message: 'تم إنشاء الحساب بنجاح', user: publicUser(user), token: generateToken(user) });
 }));
@@ -87,6 +102,7 @@ router.post('/register-merchant', validate({ body: merchantRegisterSchema }), as
     await supabaseAdmin.from('users').delete().eq('id', user.id);
     throw merchantError;
   }
+  await assignSystemRole({ userId: user.id, roleKey: 'company_manager', companyId: merchant.id });
   await audit(user.id, 'merchant_registration_submitted', 'merchant', merchant.id);
   res.status(201).json({
     message: 'تم تسجيل الشركة وهي بانتظار موافقة الإدارة',
@@ -101,7 +117,7 @@ router.post('/login', validate({ body: loginSchema }), asyncHandler(async (req, 
   const { data: user, error } = await supabaseAdmin.from('users').select('*').eq('email', email).maybeSingle();
   if (error) throw error;
   if (!user || !(await bcrypt.compare(password, user.password))) throw new AppError(401, 'بيانات تسجيل الدخول غير صحيحة', 'INVALID_CREDENTIALS');
-  if (!user.is_active) throw new AppError(403, 'الحساب معطل. تواصل مع الدعم للمساعدة.', 'ACCOUNT_DISABLED');
+  if (!user.is_active || user.account_status !== 'active') throw new AppError(403, 'الحساب غير متاح. تواصل مع الدعم للمساعدة.', 'ACCOUNT_DISABLED');
 
   await supabaseAdmin.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', user.id);
   await audit(user.id, 'login_succeeded', 'user', user.id);

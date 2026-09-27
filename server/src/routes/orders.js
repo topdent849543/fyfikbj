@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import express from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
+import { requireAnyPermission, requirePermission } from '../middleware/permissions.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError, audit, normalizeArabic, pageRange, notify } from '../lib/http.js';
 import { assertOrderAccess, getOrderWithRelations, roleCanTransition, transitionOrder } from '../lib/orderWorkflow.js';
@@ -282,7 +283,7 @@ router.get('/manager/drivers', verifyToken, requireRole(['manager', 'admin']), a
   res.json({ drivers: data || [] });
 }));
 
-router.get('/driver/assignments', verifyToken, requireRole(['driver']), asyncHandler(async (req, res) => {
+router.get('/driver/assignments', verifyToken, requireAnyPermission(['orders.view', 'orders.confirm_delivery']), asyncHandler(async (req, res) => {
   const { data: driver, error: driverError } = await supabaseAdmin.from('driver_profiles').select('id').eq('user_id', req.user.id).maybeSingle();
   if (driverError) throw driverError;
   if (!driver) throw new AppError(404, 'ملف السائق غير موجود', 'DRIVER_NOT_FOUND');
@@ -340,11 +341,11 @@ async function driverTransition(req, res, status, noteAction) {
   res.json({ message: 'تم تحديث مهمة التوصيل', order: updated });
 }
 
-router.post('/:id/driver/accept', verifyToken, requireRole(['driver']), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'in_delivery', 'driver_assignment_accepted')));
-router.post('/:id/driver/arrive', verifyToken, requireRole(['driver']), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'arrived', 'driver_arrived')));
-router.post('/:id/driver/deliver', verifyToken, requireRole(['driver']), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'delivered', 'driver_delivered')));
+router.post('/:id/driver/accept', verifyToken, requirePermission('orders.confirm_delivery'), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'in_delivery', 'driver_assignment_accepted')));
+router.post('/:id/driver/arrive', verifyToken, requirePermission('orders.confirm_delivery'), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'arrived', 'driver_arrived')));
+router.post('/:id/driver/deliver', verifyToken, requirePermission('orders.confirm_delivery'), validate({ params: idParamsSchema, body: driverProofSchema }), asyncHandler((req, res) => driverTransition(req, res, 'delivered', 'driver_delivered')));
 
-router.post('/:id/driver/cash-collected', verifyToken, requireRole(['driver']), validate({ params: idParamsSchema, body: moneyReceiptSchema }), asyncHandler(async (req, res) => {
+router.post('/:id/driver/cash-collected', verifyToken, requirePermission('orders.confirm_payment'), validate({ params: idParamsSchema, body: moneyReceiptSchema }), asyncHandler(async (req, res) => {
   const order = await getOrderWithRelations(req.params.id);
   await assertOrderAccess(order, req.user);
   const updated = await transitionOrder({ order, actor: req.user, toStatus: 'awaiting_payment', reason: req.body.notes });

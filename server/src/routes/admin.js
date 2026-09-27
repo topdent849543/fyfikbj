@@ -1,18 +1,30 @@
 import express from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/permissions.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError, audit, notify, pageRange } from '../lib/http.js';
 import { adminUserSchema, approvalSchema, bannerSchema, createCategorySchema, createDiscountSchema, createOfferSchema, createSubCategorySchema, idParamsSchema, paymentReviewSchema, provinceSchema, settingSchema } from '../validation/schemas.js';
 
 const router = express.Router();
-router.use(verifyToken, requireRole(['admin']));
+// Retained for backwards-compatible operations. New administration uses
+// /api/platform and explicit scope-aware permissions.
+router.use(verifyToken, requireRole(['admin']), requirePermission('dashboard.view'));
 
 async function list(table, query, res) {
   const { page, limit, from, to } = pageRange(query.page, query.limit);
   const { data, error, count } = await supabaseAdmin.from(table).select('*', { count: 'exact' }).order('created_at', { ascending: false }).range(from, to);
   if (error) throw error;
   res.json({ items: data || [], pagination: { page, limit, total: count || 0, pages: Math.ceil((count || 0) / limit) } });
+}
+
+async function assertNotPlatformOwner(userId) {
+  const { data: ownerRole, error: roleError } = await supabaseAdmin.from('roles').select('id').eq('key', 'platform_owner').maybeSingle();
+  if (roleError) throw roleError;
+  if (!ownerRole) return;
+  const { data: assignment, error } = await supabaseAdmin.from('user_role_assignments').select('id').eq('user_id', userId).eq('role_id', ownerRole.id).eq('is_active', true).maybeSingle();
+  if (error) throw error;
+  if (assignment) throw new AppError(403, 'حساب المدير العام محمي من التعديل عبر الإدارة القديمة', 'PLATFORM_OWNER_PROTECTED');
 }
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
@@ -50,6 +62,7 @@ router.get('/users', asyncHandler(async (req, res) => {
 
 router.patch('/users/:id', validate({ params: idParamsSchema, body: adminUserSchema }), asyncHandler(async (req, res) => {
   if (req.params.id === req.user.id && (req.body.role || req.body.isActive === false)) throw new AppError(409, 'لا يمكنك تعديل صلاحية أو تعطيل حسابك من هذه الشاشة', 'SELF_ADMIN_CHANGE_BLOCKED');
+  await assertNotPlatformOwner(req.params.id);
   const { data: user, error } = await supabaseAdmin.from('users').update({
     ...(req.body.role !== undefined ? { role: req.body.role } : {}),
     ...(req.body.isActive !== undefined ? { is_active: req.body.isActive, disabled_at: req.body.isActive ? null : new Date().toISOString() } : {}),
