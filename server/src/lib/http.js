@@ -24,13 +24,17 @@ export function pageRange(page = 1, limit = 20) {
   return { page: safePage, limit: safeLimit, from: (safePage - 1) * safeLimit, to: safePage * safeLimit - 1 };
 }
 
-export async function audit(userId, action, entityType, entityId, details = {}) {
+export async function audit(userId, action, entityType, entityId, details = {}, companyId = null, oldValues = null, newValues = null, actorRole = null) {
   const { error } = await supabaseAdmin.from('activity_log').insert({
     user_id: userId || null,
     action,
     entity_type: entityType,
     entity_id: entityId ? String(entityId) : null,
-    details
+    details,
+    company_id: companyId || null,
+    old_values: oldValues,
+    new_values: newValues,
+    actor_role: actorRole || null
   });
   if (error) console.error(JSON.stringify({ event: 'audit_write_failed', action, code: error.code }));
 }

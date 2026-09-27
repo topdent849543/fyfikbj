@@ -1,12 +1,23 @@
 import express from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
 import { verifyToken, requireRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/permissions.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler, AppError, audit, merchantForUser, normalizeArabic, pageRange } from '../lib/http.js';
+import { canAccessCompany } from '../services/permissionService.js';
 import { createProductSchema, idParamsSchema, productQuerySchema, reportProductSchema, updateProductSchema } from '../validation/schemas.js';
 import { deleteMediaAssetsByUrls, markMediaAssetsAttached } from '../lib/storage.js';
 
 const router = express.Router();
+
+async function companyForActor(actor) {
+  if (actor.companyIds?.length === 1) {
+    const { data, error } = await supabaseAdmin.from('merchants').select('*').eq('id', actor.companyIds[0]).maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+  return merchantForUser(actor.id);
+}
 
 function productPayload(body, merchant) {
   const rate = Number(merchant.dollar_rate || 1);
@@ -139,9 +150,11 @@ router.get('/:id', validate({ params: idParamsSchema }), asyncHandler(async (req
   res.json(data);
 }));
 
-router.post('/', verifyToken, requireRole(['merchant']), validate({ body: createProductSchema }), asyncHandler(async (req, res) => {
-  const merchant = await merchantForUser(req.user.id);
+router.post('/', verifyToken, requirePermission('products.create'), validate({ body: createProductSchema }), asyncHandler(async (req, res) => {
+  const merchant = await companyForActor(req.user);
   if (!merchant) throw new AppError(404, 'ملف الشركة غير موجود', 'MERCHANT_NOT_FOUND');
+  if (!canAccessCompany(req.user, merchant.id)) throw new AppError(403, 'لا تملك صلاحية إضافة منتج لهذه الشركة', 'COMPANY_SCOPE_FORBIDDEN');
+  if (!merchant.is_active) throw new AppError(409, 'الشركة معطلة ولا يمكنها إضافة منتجات جديدة', 'COMPANY_INACTIVE');
   const payload = productPayload(req.body, merchant);
   const { data: product, error } = await supabaseAdmin.from('products').insert({
     ...payload,
@@ -156,13 +169,14 @@ router.post('/', verifyToken, requireRole(['merchant']), validate({ body: create
   res.status(201).json({ message: 'تم إرسال المنتج للمراجعة', productId: product.id, status: product.status });
 }));
 
-router.put('/:id', verifyToken, requireRole(['merchant']), validate({ params: idParamsSchema, body: updateProductSchema }), asyncHandler(async (req, res) => {
-  const merchant = await merchantForUser(req.user.id);
+router.put('/:id', verifyToken, requirePermission('products.update'), validate({ params: idParamsSchema, body: updateProductSchema }), asyncHandler(async (req, res) => {
+  const merchant = await companyForActor(req.user);
   if (!merchant) throw new AppError(404, 'ملف الشركة غير موجود', 'MERCHANT_NOT_FOUND');
+  if (!merchant.is_active) throw new AppError(409, 'الشركة معطلة ولا يمكنها تعديل منتجاتها', 'COMPANY_INACTIVE');
   const { data: product, error: lookupError } = await supabaseAdmin.from('products').select('*').eq('id', req.params.id).maybeSingle();
   if (lookupError) throw lookupError;
   if (!product) throw new AppError(404, 'المنتج غير موجود', 'PRODUCT_NOT_FOUND');
-  if (product.merchant_id !== merchant.id) throw new AppError(403, 'لا يمكنك تعديل منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
+  if (product.merchant_id !== merchant.id || !canAccessCompany(req.user, product.merchant_id)) throw new AppError(403, 'لا يمكنك تعديل منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
 
   const merged = { ...product, ...req.body, price: req.body.price ?? product.price, currency: req.body.currency ?? product.currency };
   const updates = productPayload({
@@ -195,28 +209,22 @@ router.put('/:id', verifyToken, requireRole(['merchant']), validate({ params: id
   res.json({ message: 'تم تحديث المنتج وإرساله للمراجعة', status: 'pending' });
 }));
 
-router.patch('/:id/disable', verifyToken, requireRole(['merchant', 'admin']), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
+router.patch('/:id/disable', verifyToken, requirePermission('products.hide'), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
   const { data: product, error } = await supabaseAdmin.from('products').select('id, merchant_id').eq('id', req.params.id).maybeSingle();
   if (error) throw error;
   if (!product) throw new AppError(404, 'المنتج غير موجود', 'PRODUCT_NOT_FOUND');
-  if (req.user.role === 'merchant') {
-    const merchant = await merchantForUser(req.user.id);
-    if (!merchant || merchant.id !== product.merchant_id) throw new AppError(403, 'لا يمكنك إيقاف منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
-  }
+  if (!canAccessCompany(req.user, product.merchant_id)) throw new AppError(403, 'لا يمكنك إيقاف منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
   const { error: updateError } = await supabaseAdmin.from('products').update({ is_active: false, status: 'inactive', updated_at: new Date().toISOString() }).eq('id', product.id);
   if (updateError) throw updateError;
   await audit(req.user.id, 'product_disabled', 'product', product.id);
   res.json({ message: 'تم إيقاف المنتج' });
 }));
 
-router.delete('/:id', verifyToken, requireRole(['merchant', 'admin']), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
+router.delete('/:id', verifyToken, requirePermission('products.archive'), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
   const { data: product, error } = await supabaseAdmin.from('products').select('id, merchant_id').eq('id', req.params.id).maybeSingle();
   if (error) throw error;
   if (!product) throw new AppError(404, 'المنتج غير موجود', 'PRODUCT_NOT_FOUND');
-  if (req.user.role === 'merchant') {
-    const merchant = await merchantForUser(req.user.id);
-    if (!merchant || merchant.id !== product.merchant_id) throw new AppError(403, 'لا يمكنك حذف منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
-  }
+  if (!canAccessCompany(req.user, product.merchant_id)) throw new AppError(403, 'لا يمكنك حذف منتج شركة أخرى', 'PRODUCT_OWNERSHIP_REQUIRED');
   const { error: updateError } = await supabaseAdmin.from('products').update({ is_active: false, status: 'inactive', updated_at: new Date().toISOString() }).eq('id', product.id);
   if (updateError) throw updateError;
   await audit(req.user.id, 'product_deleted_soft', 'product', product.id);
