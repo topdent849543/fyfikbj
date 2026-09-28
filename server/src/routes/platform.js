@@ -249,9 +249,13 @@ router.patch('/users/:id/status', requirePermission('users.disable'), validate({
 }));
 
 router.get('/roles', requirePermission('roles.view'), asyncHandler(async (req, res) => {
-  const { data, error } = await supabaseAdmin.from('roles').select('*, role_permissions(permission:permissions(id, key, name_ar, module))').order('is_system', { ascending: false }).order('name_ar');
-  if (error) throw error;
-  res.json({ roles: data || [] });
+  const [{ data: roles, error: rolesError }, { data: permissions, error: permissionsError }] = await Promise.all([
+    supabaseAdmin.from('roles').select('*, role_permissions(permission:permissions(id, key, name_ar, module))').order('is_system', { ascending: false }).order('name_ar'),
+    supabaseAdmin.from('permissions').select('id, key, name_ar, description, module').order('module').order('name_ar')
+  ]);
+  if (rolesError) throw rolesError;
+  if (permissionsError) throw permissionsError;
+  res.json({ roles: roles || [], permissions: permissions || [] });
 }));
 
 router.post('/roles', requirePermission('roles.create'), validate({ body: roleCreateSchema }), asyncHandler(async (req, res) => {
@@ -311,9 +315,20 @@ router.get('/products', requirePermission('products.view'), asyncHandler(async (
   query = applyCompanyScope(query, req.user);
   if (req.query.companyId) { assertCompanyScope(req.user, req.query.companyId); query = query.eq('merchant_id', req.query.companyId); }
   if (req.query.status) query = query.eq('status', req.query.status);
+  if (req.query.search) query = query.or(`name.ilike.%${String(req.query.search).replaceAll(',', '')}%,code.ilike.%${String(req.query.search).replaceAll(',', '')}%`);
+  if (req.query.minPrice || req.query.minTotal) query = query.gte('price', Number(req.query.minPrice || req.query.minTotal));
+  if (req.query.maxPrice || req.query.maxTotal) query = query.lte('price', Number(req.query.maxPrice || req.query.maxTotal));
   const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
   if (error) throw error;
   res.json({ products: data || [] });
+}));
+
+router.get('/products/:id', requirePermission('products.view'), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
+  const { data: product, error } = await supabaseAdmin.from('products').select('*, merchant:merchants(*), images:product_images(*), reports:product_reports(*), order_items:order_items(id, order_id, quantity, price, created_at)').eq('id', req.params.id).maybeSingle();
+  if (error) throw error;
+  if (!product) throw new AppError(404, 'المنتج غير موجود', 'PRODUCT_NOT_FOUND');
+  assertCompanyScope(req.user, product.merchant_id);
+  res.json({ product });
 }));
 
 router.patch('/products/:id', requireAnyPermission(['products.update', 'products.price.update', 'products.stock.update']), validate({ params: idParamsSchema, body: platformProductUpdateSchema }), asyncHandler(async (req, res) => {
@@ -358,6 +373,9 @@ router.get('/orders', requirePermission('orders.view'), asyncHandler(async (req,
   query = applyCompanyScope(query, req.user);
   if (req.query.companyId) { assertCompanyScope(req.user, req.query.companyId); query = query.eq('merchant_id', req.query.companyId); }
   if (req.query.status) query = query.eq('status', req.query.status);
+  if (req.query.search) query = query.ilike('order_number', `%${String(req.query.search).replaceAll('%', '')}%`);
+  if (req.query.minTotal) query = query.gte('total', Number(req.query.minTotal));
+  if (req.query.maxTotal) query = query.lte('total', Number(req.query.maxTotal));
   const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
   if (error) throw error;
   res.json({ orders: data || [] });
@@ -399,6 +417,14 @@ router.get('/drivers', requirePermission('drivers.view'), asyncHandler(async (re
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
   res.json({ drivers: data || [] });
+}));
+
+router.get('/drivers/:id', requirePermission('drivers.view'), validate({ params: idParamsSchema }), asyncHandler(async (req, res) => {
+  const { data: driver, error } = await supabaseAdmin.from('driver_profiles').select('*, user:users(id, full_name, email, phone, whatsapp, province, area, address, account_status, is_active, created_at), company:merchants(id, company_name, phone, province, area), assignments:driver_assignments(*, order:orders(id, order_number, status, total, created_at))').eq('id', req.params.id).maybeSingle();
+  if (error) throw error;
+  if (!driver) throw new AppError(404, 'السائق غير موجود', 'DRIVER_NOT_FOUND');
+  assertCompanyScope(req.user, driver.company_id);
+  res.json({ driver });
 }));
 
 router.post('/drivers', requirePermission('drivers.create'), validate({ body: driverCreateSchema }), asyncHandler(async (req, res) => {
@@ -445,8 +471,14 @@ router.post('/collections/:id/confirm', requireAnyPermission(['finance.confirm_p
 }));
 
 router.get('/invoices', requirePermission('invoices.view'), asyncHandler(async (req, res) => {
-  let query = supabaseAdmin.from('invoices').select('*, customer:users(full_name), company:merchants(company_name)');
+  let query = supabaseAdmin.from('invoices').select('*, customer:users(full_name, email), company:merchants(id, company_name)');
   if (!req.user.hasGlobalScope) query = query.in('company_id', req.user.companyIds);
+  if (req.query.companyId) { assertCompanyScope(req.user, req.query.companyId); query = query.eq('company_id', req.query.companyId); }
+  if (req.query.search) query = query.ilike('invoice_number', `%${String(req.query.search).replaceAll('%', '')}%`);
+  if (req.query.minTotal) query = query.gte('total', Number(req.query.minTotal));
+  if (req.query.maxTotal) query = query.lte('total', Number(req.query.maxTotal));
+  if (req.query.from) query = query.gte('issued_at', req.query.from);
+  if (req.query.to) query = query.lte('issued_at', req.query.to);
   const { data, error } = await query.order('issued_at', { ascending: false });
   if (error) throw error;
   res.json({ invoices: data || [] });
