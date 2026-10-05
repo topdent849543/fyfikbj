@@ -277,8 +277,10 @@ USING ranked
 WHERE item.id = ranked.id AND ranked.row_number > 1;
 
 DO $$ BEGIN
-  ALTER TABLE cart_items ADD CONSTRAINT cart_items_user_product_key UNIQUE (user_id, product_id);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cart_items_user_product_key') THEN
+    ALTER TABLE cart_items ADD CONSTRAINT cart_items_user_product_key UNIQUE (user_id, product_id);
+  END IF;
+END $$;
 
 WITH ranked AS (
   SELECT
@@ -291,8 +293,10 @@ USING ranked
 WHERE rate.id = ranked.id AND ranked.row_number > 1;
 
 DO $$ BEGIN
-  ALTER TABLE delivery_rates ADD CONSTRAINT delivery_rates_merchant_speed_key UNIQUE (merchant_id, speed);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'delivery_rates_merchant_speed_key') THEN
+    ALTER TABLE delivery_rates ADD CONSTRAINT delivery_rates_merchant_speed_key UNIQUE (merchant_id, speed);
+  END IF;
+END $$;
 
 UPDATE discount_codes SET current_uses = 0 WHERE current_uses IS NULL;
 ALTER TABLE discount_codes ALTER COLUMN current_uses SET NOT NULL;
