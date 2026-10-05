@@ -216,9 +216,16 @@ After the Vercel deployment URL is known, add it to the backend `CORS_ORIGINS` a
 
 ```text
 client/                  Next.js Arabic RTL client
+mobile/                  Native React Native/Expo Android client (no WebView)
 server/src/routes/       Express route modules
 server/src/lib/          API, mail, storage, and order-workflow helpers
 server/src/db/           base migration, versioned migrations, runner, admin seed
 server/src/validation/   strict Zod request contracts
 server/test/             smoke and workflow tests
 ```
+
+## Native Android application
+
+The `mobile/` directory contains a real React Native/Expo client for Android. It uses the same API, JWT authentication, Supabase database, product catalog, cart, checkout, uploads, notifications, and role-aware dashboard endpoints as the web client; it does not embed the website in a WebView.
+
+The GitHub Actions workflow at `.github/workflows/android-apk.yml` builds a release APK on pushes affecting `mobile/` or manually from **Actions → Build TopDent Android APK**. Set the workflow `api_url` input (or repository variable `TOPDENT_API_URL`) to the backend URL ending in `/api`. The APK is uploaded as the `topdent-release-apk` artifact.

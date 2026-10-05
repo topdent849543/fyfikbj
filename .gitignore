@@ -34,6 +34,8 @@ uploads/
 *.png
 *.gif
 *.webp
+!mobile/assets/icon.png
+mobile/android/
 
 # OS
 .DS_Store
@@ -43,6 +45,8 @@ Thumbs.db
 .cache/
 .parcel-cache
 .eslintcache
+.expo/
+mobile/dist/
 
 # Testing
 coverage/
