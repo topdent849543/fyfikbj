@@ -2,19 +2,31 @@
   "expo": {
     "name": "TopDent",
     "slug": "topdent",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "topdent",
     "icon": "./assets/icon.png",
-    "splash": { "backgroundColor": "#0f766e" },
+    "splash": {
+      "backgroundColor": "#0f766e"
+    },
     "android": {
       "package": "com.topdent.app",
-      "versionCode": 1,
-      "adaptiveIcon": { "backgroundColor": "#0f766e" },
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "backgroundColor": "#0f766e"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
     },
-    "plugins": ["expo-image-picker"],
-    "extra": { "apiUrl": "https://fyfikbj-production.up.railway.app/api" }
+    "plugins": [
+      "expo-image-picker",
+      "expo-asset"
+    ],
+    "extra": {
+      "apiUrl": "https://fyfikbj-production.up.railway.app/api"
+    }
   }
 }
