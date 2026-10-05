@@ -33,6 +33,14 @@ router.get('/categories', asyncHandler(async (req, res) => {
   res.json({ categories: data || [] });
 }));
 
+
+router.get('/universities', asyncHandler(async (req, res) => {
+  let query = supabaseAdmin.from('universities').select('id, name, province_id, province:provinces(id, name)').eq('is_active', true).order('order_index').order('name');
+  if (req.query.province) query = query.eq('province.name', req.query.province);
+  const { data, error } = await query;
+  if (error) throw error;
+  res.json({ universities: data || [] });
+}));
 router.get('/offers', asyncHandler(async (req, res) => {
   const { page, limit, from, to } = pageRange(req.query.page, req.query.limit);
   const now = new Date().toISOString();

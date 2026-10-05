@@ -81,6 +81,7 @@ const productFields = {
   maintenanceDetails: optionalText(5000),
   deliverySameProvince: z.boolean().default(true),
   shippingOtherProvince: z.boolean().default(true),
+  deliveryProvider: z.enum(['auto', 'merchant', 'platform']).default('auto'),
   sellerProvince: trimmedString(2, 100),
   sellerArea: trimmedString(2, 150),
   sellerUniversity: optionalText(255),
@@ -216,6 +217,7 @@ export const bannerSchema = z.object({ title: optionalText(255), imageUrl: image
 export const settingSchema = z.object({ key: z.string().trim().min(2).max(255).regex(/^[A-Za-z0-9_.-]+$/), value: z.string().trim().max(20000) }).strict();
 export const paymentReviewSchema = z.object({ approved: z.boolean(), note: optionalText(2000) }).strict();
 export const provinceSchema = z.object({ name: trimmedString(2, 100), isActive: z.boolean().default(true) }).strict();
+export const universitySchema = z.object({ name: trimmedString(2, 255), provinceId: uuid.optional().nullable(), isActive: z.boolean().default(true), orderIndex: z.coerce.number().int().min(0).max(10000).default(0) }).strict();
 export const rentalStatusSchema = z.object({ status: z.enum(['new', 'pending_review', 'approved', 'rejected', 'ready', 'active', 'returned', 'closed', 'cancelled']), managerNote: optionalText(5000), returnCondition: optionalText(5000) }).strict();
 export const accountStatusSchema = z.enum(['active', 'inactive', 'suspended', 'pending']);
 export const companyCreateSchema = z.object({
@@ -238,7 +240,8 @@ export const companyUpdateSchema = z.object({
   area: optionalText(150),
   description: optionalText(5000),
   logoUrl: optionalUrl,
-  dollarRate: positiveMoney.optional()
+  dollarRate: positiveMoney.optional(),
+  deliveryEnabled: z.boolean().optional()
 }).strict().refine((value) => Object.keys(value).length > 0, 'حدد حقلاً واحداً على الأقل');
 export const companyStatusSchema = z.object({ isActive: z.boolean() }).strict();
 export const userStatusSchema = z.object({ accountStatus: accountStatusSchema }).strict();

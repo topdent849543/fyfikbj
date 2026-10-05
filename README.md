@@ -77,6 +77,7 @@ The original schema is preserved in `server/src/db/migrations.sql`. New idempote
 4. `004_discount_redemption.sql` consumes discount use atomically and prevents quota races.
 5. `005_personal_sellers.sql` supports customer-owned used-product listings.
 6. `006_rbac_permissions.sql` adds RBAC, company scope, account lifecycle, protected owner assignments, driver types, delivery issues, invoice snapshots, and auditable collection confirmation.
+7. `007_catalog_delivery_controls.sql` adds managed universities, platform fallback delivery rates, catalog permissions, stable product category links, and company delivery controls.
 
 Apply migrations using a Supabase service role key:
 
@@ -204,7 +205,8 @@ After the Vercel deployment URL is known, add it to the backend `CORS_ORIGINS` a
 
 ## Operational notes
 
-- Configure company delivery rates for normal, urgent, and very urgent delivery before checkout. Each speed has separate same-province and out-of-province rates.
+- Configure company delivery rates for normal, urgent, and very urgent delivery before checkout. If a company delivery flag is disabled, checkout automatically uses the configured TopDent platform delivery rates; delivery remains mandatory for every order.
+- Manage categories, subcategories, universities, ordering, and activation from the catalog section of the platform dashboard. Public forms use controlled province and university selections. Each speed has separate same-province and out-of-province rates.
 - Activate the desired social, contact, and `about_text` settings from the administration API/dashboard before launch. The public footer only renders real URLs, never fake placeholder links.
 - Use `POST /api/upload/cleanup-orphans` as an administrator to delete unattached images older than the specified threshold. The endpoint is deliberately explicit rather than silently deleting user-uploaded files.
 - External transfers are recorded as verification tasks for administrators. The system does not implement an internal wallet or wallet balance.

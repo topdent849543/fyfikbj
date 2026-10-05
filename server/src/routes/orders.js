@@ -37,7 +37,7 @@ function safeProductSnapshot(product) {
 async function collectCheckoutLines(items) {
   const productIds = items.map((item) => item.productId);
   const { data: products, error } = await supabaseAdmin.from('products').select(`
-    *, merchant:merchants!inner(id, user_id, company_name, province, area, dollar_rate, is_active, is_approved, approval_status), images:product_images(image_url, is_primary)
+    *, merchant:merchants!inner(id, user_id, company_name, province, area, dollar_rate, delivery_enabled, is_active, is_approved, approval_status), images:product_images(image_url, is_primary)
   `).in('id', productIds).eq('is_active', true).eq('is_approved', true).eq('status', 'approved');
   if (error) throw error;
   if ((products || []).length !== items.length) throw new AppError(404, 'أحد المنتجات لم يعد متاحاً', 'PRODUCT_UNAVAILABLE');
@@ -53,13 +53,18 @@ async function collectCheckoutLines(items) {
   });
 }
 
-async function deliveryQuoteForMerchant(merchant, deliverySpeed, province) {
-  const { data: rate, error } = await supabaseAdmin.from('delivery_rates').select('*').eq('merchant_id', merchant.id).eq('speed', deliverySpeed).maybeSingle();
-  if (error) throw error;
-  if (!rate) throw new AppError(400, `خدمة التوصيل غير مهيأة لدى ${merchant.company_name} للسرعة المطلوبة`, 'DELIVERY_NOT_CONFIGURED');
+async function deliveryQuoteForMerchant(merchant, deliverySpeed, province, provider = 'auto') {
+  const useMerchant = provider === 'merchant' || (provider === 'auto' && merchant.delivery_enabled !== false);
   const sameProvince = normalizeArabic(merchant.province) === normalizeArabic(province);
+  const table = useMerchant ? 'delivery_rates' : 'platform_delivery_rates';
+  const filter = useMerchant ? { merchant_id: merchant.id } : {};
+  let rateQuery = supabaseAdmin.from(table).select('*').eq('speed', deliverySpeed);
+  Object.entries(filter).forEach(([key, value]) => { rateQuery = rateQuery.eq(key, value); });
+  const { data: rate, error } = await rateQuery.maybeSingle();
+  if (error) throw error;
+  if (!rate) throw new AppError(400, useMerchant ? `خدمة التوصيل غير مهيأة لدى ${merchant.company_name} للسرعة المطلوبة` : 'تعرفة توصيل TopDent غير مهيأة للسرعة المطلوبة', 'DELIVERY_NOT_CONFIGURED');
   const cost = asNumber(sameProvince ? rate.same_province : rate.other_province);
-  return { cost, snapshot: { speed: deliverySpeed, sameProvince, merchantProvince: merchant.province, customerProvince: province, cost, capturedAt: nowIso() } };
+  return { cost, snapshot: { provider: useMerchant ? 'merchant' : 'platform', providerName: useMerchant ? merchant.company_name : 'TopDent', speed: deliverySpeed, sameProvince, merchantProvince: merchant.province, customerProvince: province, cost, capturedAt: nowIso() } };
 }
 
 async function eligibleDiscount(discountCode, userId, lines) {
@@ -98,7 +103,8 @@ async function buildQuote({ items, deliverySpeed, province, discountCode, userId
   const discountInfo = await eligibleDiscount(discountCode, userId, lines);
   const merchantQuotes = [];
   for (const group of groups) {
-    const delivery = await deliveryQuoteForMerchant(group.merchant, deliverySpeed, province);
+    const provider = group.lines.some((line) => line.product.delivery_provider === 'platform') ? 'platform' : (group.lines.some((line) => line.product.delivery_provider === 'merchant') ? 'merchant' : 'auto');
+    const delivery = await deliveryQuoteForMerchant(group.merchant, deliverySpeed, province, provider);
     const subtotal = group.lines.reduce((total, line) => total + line.lineSyp, 0);
     const eligibleSubtotal = discountInfo ? group.lines.filter((line) => discountInfo.eligibleLines.includes(line)).reduce((total, line) => total + line.lineSyp, 0) : 0;
     const discountAmount = discountInfo && eligibleSubtotal ? discountInfo.amount * (eligibleSubtotal / discountInfo.eligibleSubtotal) : 0;

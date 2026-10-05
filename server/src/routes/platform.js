@@ -10,7 +10,7 @@ import { assertOrderAccess, getOrderWithRelations, transitionOrder } from '../li
 import {
   assignDriverSchema, companyCreateSchema, companyStatusSchema, companyUpdateSchema, deliveryIssueSchema,
   driverCreateSchema, driverStatusSchema, idParamsSchema, notificationBroadcastSchema, orderStatusSchema,
-  platformProductUpdateSchema, platformUserCreateSchema, productStatusSchema, roleAssignmentSchema, roleCreateSchema, rolePermissionsSchema, roleUpdateSchema, userStatusSchema
+  platformProductUpdateSchema, platformUserCreateSchema, productStatusSchema, roleAssignmentSchema, roleCreateSchema, rolePermissionsSchema, roleUpdateSchema, userStatusSchema, createCategorySchema, createSubCategorySchema, universitySchema, deliveryRateSchema, deliverySpeedParamsSchema
 } from '../validation/schemas.js';
 import { validate } from '../middleware/validate.js';
 
@@ -160,6 +160,7 @@ router.patch('/companies/:id', requirePermission('companies.update'), validate({
     ...(req.body.description !== undefined ? { description: req.body.description } : {}),
     ...(req.body.logoUrl !== undefined ? { logo_url: req.body.logoUrl } : {}),
     ...(req.body.dollarRate !== undefined ? { dollar_rate: req.body.dollarRate } : {}),
+    ...(req.body.deliveryEnabled !== undefined ? { delivery_enabled: req.body.deliveryEnabled } : {}),
     updated_at: new Date().toISOString()
   }).eq('id', company.id).select().single();
   if (error) throw error;
@@ -502,6 +503,81 @@ router.get('/invoices/:id/export', requirePermission('invoices.export'), validat
   res.send(`\ufeff${csv([['الفاتورة', invoice.invoice_number], ['الشركة', invoice.company?.company_name || 'TopDent'], ['الإجمالي', invoice.total], [], ['المنتج', 'الكمية', 'سعر الوحدة', 'الإجمالي'], ...invoice.items.map((item) => [item.name, item.quantity, item.unit_price, item.line_total])])}`);
 }));
 
+
+router.get('/catalog/categories', requirePermission('catalog.view'), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('categories').select('*, subCategories:sub_categories(*)').order('order_index').order('name');
+  if (error) throw error;
+  res.json({ categories: data || [] });
+}));
+router.post('/catalog/categories', requirePermission('catalog.manage'), validate({ body: createCategorySchema }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('categories').insert({ name: req.body.name, description: req.body.description || null, icon_url: req.body.iconUrl || null, order_index: req.body.orderIndex }).select().single();
+  if (error?.code === '23505') throw new AppError(409, 'اسم التصنيف مستخدم بالفعل', 'CATEGORY_EXISTS');
+  if (error) throw error;
+  await audit(req.user.id, 'catalog_category_created', 'category', data.id);
+  res.status(201).json({ category: data });
+}));
+router.put('/catalog/categories/:id', requirePermission('catalog.manage'), validate({ params: idParamsSchema, body: createCategorySchema }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('categories').update({ name: req.body.name, description: req.body.description || null, icon_url: req.body.iconUrl || null, order_index: req.body.orderIndex }).eq('id', req.params.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError(404, 'التصنيف غير موجود', 'CATEGORY_NOT_FOUND');
+  await audit(req.user.id, 'catalog_category_updated', 'category', data.id);
+  res.json({ category: data });
+}));
+router.patch('/catalog/categories/:id/status', requirePermission('catalog.manage'), validate({ params: idParamsSchema, body: companyStatusSchema.pick({ isActive: true }) }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('categories').update({ is_active: req.body.isActive }).eq('id', req.params.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError(404, 'التصنيف غير موجود', 'CATEGORY_NOT_FOUND');
+  await audit(req.user.id, 'catalog_category_status_updated', 'category', data.id, { isActive: req.body.isActive });
+  res.json({ category: data });
+}));
+router.post('/catalog/sub-categories', requirePermission('catalog.manage'), validate({ body: createSubCategorySchema }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('sub_categories').insert({ category_id: req.body.categoryId, name: req.body.name, description: req.body.description || null }).select().single();
+  if (error?.code === '23505') throw new AppError(409, 'اسم التصنيف الفرعي مستخدم بالفعل', 'SUBCATEGORY_EXISTS');
+  if (error) throw error;
+  await audit(req.user.id, 'catalog_subcategory_created', 'sub_category', data.id);
+  res.status(201).json({ subCategory: data });
+}));
+router.put('/catalog/sub-categories/:id', requirePermission('catalog.manage'), validate({ params: idParamsSchema, body: createSubCategorySchema.omit({ categoryId: true }) }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('sub_categories').update({ name: req.body.name, description: req.body.description || null }).eq('id', req.params.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError(404, 'التصنيف الفرعي غير موجود', 'SUBCATEGORY_NOT_FOUND');
+  res.json({ subCategory: data });
+}));
+router.patch('/catalog/sub-categories/:id/status', requirePermission('catalog.manage'), validate({ params: idParamsSchema, body: companyStatusSchema.pick({ isActive: true }) }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('sub_categories').update({ is_active: req.body.isActive }).eq('id', req.params.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError(404, 'التصنيف الفرعي غير موجود', 'SUBCATEGORY_NOT_FOUND');
+  res.json({ subCategory: data });
+}));
+router.get('/catalog/universities', requirePermission('catalog.view'), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('universities').select('*, province:provinces(id, name)').order('order_index').order('name');
+  if (error) throw error;
+  res.json({ universities: data || [] });
+}));
+router.post('/catalog/universities', requirePermission('catalog.manage'), validate({ body: universitySchema }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('universities').insert({ name: req.body.name, province_id: req.body.provinceId || null, is_active: req.body.isActive, order_index: req.body.orderIndex }).select().single();
+  if (error?.code === '23505') throw new AppError(409, 'اسم الجامعة مستخدم في هذه المحافظة', 'UNIVERSITY_EXISTS');
+  if (error) throw error;
+  res.status(201).json({ university: data });
+}));
+router.patch('/catalog/universities/:id/status', requirePermission('catalog.manage'), validate({ params: idParamsSchema, body: companyStatusSchema.pick({ isActive: true }) }), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('universities').update({ is_active: req.body.isActive, updated_at: new Date().toISOString() }).eq('id', req.params.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) throw new AppError(404, 'الجامعة غير موجودة', 'UNIVERSITY_NOT_FOUND');
+  res.json({ university: data });
+}));
+router.get('/delivery/platform-rates', requirePermission('catalog.view'), asyncHandler(async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('platform_delivery_rates').select('*').order('speed');
+  if (error) throw error;
+  res.json({ rates: data || [] });
+}));
+router.put('/delivery/platform-rates/:speed', requirePermission('delivery.platform.manage'), validate({ params: deliverySpeedParamsSchema, body: deliveryRateSchema }), asyncHandler(async (req, res) => {
+  const speed = req.params.speed;
+  if (!['normal', 'urgent', 'very_urgent'].includes(speed)) throw new AppError(400, 'سرعة التوصيل غير صالحة', 'INVALID_DELIVERY_SPEED');
+  const { data, error } = await supabaseAdmin.from('platform_delivery_rates').upsert({ speed, same_province: req.body.sameProvince, other_province: req.body.otherProvince, updated_at: new Date().toISOString() }, { onConflict: 'speed' }).select().single();
+  if (error) throw error;
+  res.json({ rate: data });
+}));
 router.get('/audit-log', requirePermission('audit.view'), asyncHandler(async (req, res) => {
   let query = supabaseAdmin.from('activity_log').select('*, user:users(full_name, email), company:merchants(company_name)');
   if (!req.user.hasGlobalScope) query = query.in('company_id', req.user.companyIds);
